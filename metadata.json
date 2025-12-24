@@ -1,0 +1,7 @@
+{
+  "name": "OmniPass Smart Hostel Security",
+  "description": "A futuristic QR-based security platform for smart campuses featuring real-time gate pass management, warden approvals, and automated safety alerts.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
