@@ -18,7 +18,9 @@ import {
   MapPin,
   Calendar,
   ChevronRight,
-  ShieldCheck
+  ShieldCheck,
+  Plus,
+  ArrowRight
 } from 'lucide-react';
 import { HOSTELS } from '../constants';
 import { GatePassRequest, RequestStatus, PassType } from '../types';
@@ -57,14 +59,10 @@ const StudentFlow: React.FC = () => {
         const requests: GatePassRequest[] = JSON.parse(stored);
         setAllRequests(requests);
         
-        // Update current active pass if we are in waiting/success modes
+        // If we are looking at a specific pass in detail, update it
         if (activePass) {
           const updated = requests.find(r => r.id === activePass.id);
-          if (updated && updated.status !== activePass.status) {
-            setActivePass(updated);
-            if (updated.status === RequestStatus.APPROVED) setView('SUCCESS');
-            if (updated.status === RequestStatus.REJECTED) setView('REJECTED');
-          }
+          if (updated) setActivePass(updated);
         }
       }
     };
@@ -118,7 +116,6 @@ const StudentFlow: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      // Sanitize name for filename
       const safeName = activePass.studentName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
       link.download = `OmniPass_${safeName}_${activePass.id}.png`;
       document.body.appendChild(link);
@@ -153,21 +150,26 @@ const StudentFlow: React.FC = () => {
     };
 
     const existing = JSON.parse(localStorage.getItem('omnipass_requests') || '[]');
-    localStorage.setItem('omnipass_requests', JSON.stringify([...existing, newRequest]));
+    localStorage.setItem('omnipass_requests', JSON.stringify([newRequest, ...existing]));
 
-    setActivePass(newRequest);
     setTimeout(() => {
-      setView('PENDING');
+      setView('DASHBOARD');
       setIsSubmitting(false);
+      // Reset form
+      setFormData({ ...formData, reason: '', outDateTime: '', inDateTime: '', photo: '' });
     }, 800);
   };
-
-  const currentTabRequest = allRequests.find(r => r.passType === activeTab && r.status !== RequestStatus.EXPIRED);
 
   const formatDateTime = (dtStr: string) => {
     if (!dtStr) return "N/A";
     return new Date(dtStr).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
   };
+
+  // Filter requests for the current tab
+  const tabRequests = allRequests.filter(r => r.passType === activeTab);
+  const approvedPasses = tabRequests.filter(r => r.status === RequestStatus.APPROVED);
+  const pendingPasses = tabRequests.filter(r => r.status === RequestStatus.PENDING);
+  const otherPasses = tabRequests.filter(r => r.status !== RequestStatus.APPROVED && r.status !== RequestStatus.PENDING);
 
   return (
     <div className="max-w-md mx-auto min-h-screen pb-24">
@@ -188,75 +190,97 @@ const StudentFlow: React.FC = () => {
       </div>
 
       {view === 'DASHBOARD' && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="text-center mb-8">
-            <h2 className="text-4xl font-black italic tracking-tighter uppercase">{activeTab} PASS HUB</h2>
-            <p className="text-gray-500 text-sm">Manage your movement permissions</p>
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="text-center mb-4">
+            <h2 className="text-4xl font-black italic tracking-tighter uppercase leading-none">{activeTab} HUB</h2>
+            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-[0.2em] mt-2">OmniPass Digital Terminal</p>
           </div>
 
-          {currentTabRequest ? (
-            <div className={`glass p-8 rounded-[3rem] border-2 ${currentTabRequest.status === RequestStatus.APPROVED ? 'border-green-500/20 bg-green-500/5' : 'border-white/5'}`}>
-              <div className="flex items-center justify-between mb-6">
-                <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                  currentTabRequest.status === RequestStatus.APPROVED ? 'bg-green-500 text-white' : 
-                  currentTabRequest.status === RequestStatus.REJECTED ? 'bg-red-500 text-white' : 'bg-orange-500 text-white animate-pulse'
-                }`}>
-                  {currentTabRequest.status}
-                </span>
-                <span className="text-[10px] font-bold text-gray-600 uppercase">{currentTabRequest.id}</span>
+          {/* ALWAYS VISIBLE: REQUEST BUTTON */}
+          <section>
+            <button 
+              onClick={() => setView('FORM')}
+              className="w-full glass p-6 rounded-[2.5rem] border-white/5 flex items-center gap-6 group hover:border-cyan-500/50 transition-all active:scale-95 text-left bg-gradient-to-br from-white/[0.05] to-transparent"
+            >
+              <div className="w-14 h-14 bg-cyan-500 rounded-2xl flex items-center justify-center text-gray-950 shadow-[0_0_20px_rgba(34,211,238,0.4)] group-hover:scale-110 transition-transform">
+                <Plus className="w-8 h-8" />
               </div>
+              <div className="flex-1">
+                <h4 className="text-lg font-black uppercase italic leading-tight">Request {activeTab} Pass</h4>
+                <p className="text-[10px] text-cyan-400 font-black uppercase tracking-widest mt-0.5">Start New Authorization</p>
+              </div>
+              <ArrowRight className="w-5 h-5 text-gray-700 group-hover:text-cyan-400 transition-colors" />
+            </button>
+          </section>
 
-              {currentTabRequest.status === RequestStatus.APPROVED ? (
-                <div className="flex flex-col items-center">
-                  <div className="bg-white p-4 rounded-[2rem] mb-6 shadow-2xl">
-                    <QRCodeCanvas id="gate-pass-qr" value={JSON.stringify({ ...currentTabRequest, photo: undefined })} size={200} level="M" includeMargin={false} />
-                  </div>
-                  <div className="text-center mb-6">
-                    <h3 className="text-2xl font-black text-white uppercase italic">{currentTabRequest.studentName}</h3>
-                    <p className="text-cyan-400 text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-1">
-                      <ShieldCheck className="w-3 h-3" /> Approved by {currentTabRequest.approvedBy}
-                    </p>
-                  </div>
-                  <div className="w-full grid grid-cols-2 gap-3 mb-6">
-                    <div className="bg-white/5 p-3 rounded-2xl border border-white/5">
-                      <p className="text-[8px] font-bold text-gray-500 uppercase">Exit</p>
-                      <p className="text-xs font-bold">{formatDateTime(currentTabRequest.outTime)}</p>
-                    </div>
-                    <div className="bg-white/5 p-3 rounded-2xl border border-white/5">
-                      <p className="text-[8px] font-bold text-gray-500 uppercase">Entry</p>
-                      <p className="text-xs font-bold text-orange-400">{formatDateTime(currentTabRequest.expectedInTime)}</p>
-                    </div>
-                  </div>
-                  <button onClick={() => { setActivePass(currentTabRequest); setView('SUCCESS'); }} className="w-full py-4 bg-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
-                    <ChevronRight className="w-4 h-4" /> Expand Identity Card
-                  </button>
-                </div>
-              ) : currentTabRequest.status === RequestStatus.REJECTED ? (
-                <div className="text-center py-6">
-                  <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                  <p className="text-red-400 font-bold mb-4">Request Rejected</p>
-                  <button onClick={() => setView('FORM')} className="w-full py-4 bg-white/5 rounded-2xl text-[10px] font-black uppercase">Apply Again</button>
-                </div>
-              ) : (
-                <div className="text-center py-10">
-                  <div className="w-16 h-16 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin mx-auto mb-6"></div>
-                  <p className="text-gray-400 text-sm italic">Waiting for Warden Signature...</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="glass p-12 rounded-[3rem] border-white/5 text-center">
-              <div className="w-20 h-20 bg-white/5 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                <FileText className="w-8 h-8 text-gray-600" />
+          {/* ACTIVE PASSES SECTION */}
+          {approvedPasses.length > 0 && (
+            <section className="space-y-4">
+              <div className="flex items-center gap-2 mb-4 ml-4">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+                <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.4em]">Active Authorizations</h3>
               </div>
-              <h3 className="text-xl font-bold mb-2">No Active {activeTab} Pass</h3>
-              <p className="text-gray-500 text-xs mb-8">You need an approved digital pass to transit through the main gate.</p>
-              <button 
-                onClick={() => setView('FORM')}
-                className="w-full bg-cyan-500 text-gray-950 font-black py-5 rounded-[2rem] shadow-xl shadow-cyan-500/20 active:scale-95 transition-all"
-              >
-                REQUEST {activeTab} PASS
-              </button>
+              
+              {approvedPasses.map(pass => (
+                <div 
+                  key={pass.id}
+                  onClick={() => { setActivePass(pass); setView('SUCCESS'); }}
+                  className="glass p-6 rounded-[2.5rem] border-2 border-green-500/20 bg-green-500/[0.03] cursor-pointer hover:bg-green-500/[0.06] transition-all group"
+                >
+                  <div className="flex items-center gap-5">
+                    <div className="bg-white p-2 rounded-xl group-hover:scale-105 transition-transform">
+                       <QRCodeCanvas value={JSON.stringify({ id: pass.id, usn: pass.usn })} size={60} level="M" />
+                    </div>
+                    <div className="flex-1">
+                       <div className="flex items-center justify-between mb-1">
+                         <span className="text-[9px] font-black text-green-500 uppercase tracking-widest bg-green-500/10 px-2 py-0.5 rounded-md">Approved</span>
+                         <span className="text-[10px] font-mono text-gray-600">{pass.id}</span>
+                       </div>
+                       <h4 className="font-black text-lg uppercase italic text-white">{pass.studentName}</h4>
+                       <div className="flex items-center gap-3 text-[10px] font-bold text-gray-500 uppercase mt-1">
+                          <span className="flex items-center gap-1"><Clock className="w-3 h-3 text-cyan-500" /> {new Date(pass.outTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                          <span className="text-gray-800">•</span>
+                          <span>In: {new Date(pass.expectedInTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                       </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </section>
+          )}
+
+          {/* PENDING PASSES SECTION */}
+          {pendingPasses.length > 0 && (
+            <section className="space-y-4">
+              <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.4em] mb-4 ml-4">Pending Review</h3>
+              {pendingPasses.map(pass => (
+                <div key={pass.id} className="glass p-6 rounded-[2.5rem] border-white/5 opacity-80">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-[9px] font-black text-orange-400 uppercase tracking-widest bg-orange-500/10 px-3 py-1 rounded-full animate-pulse">Awaiting Signature</span>
+                    <span className="text-[10px] font-mono text-gray-600">{pass.id}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center">
+                       <Loader2 className="w-5 h-5 text-gray-700 animate-spin" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold uppercase text-sm italic">{pass.reason}</h4>
+                      <p className="text-[10px] text-gray-600 font-bold uppercase mt-1">Submitted {new Date(pass.timestamp).toLocaleTimeString()}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </section>
+          )}
+
+          {/* EMPTY STATE */}
+          {approvedPasses.length === 0 && pendingPasses.length === 0 && (
+            <div className="py-12 flex flex-col items-center justify-center text-center opacity-40">
+               <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6">
+                  <ShieldCheck className="w-8 h-8 text-gray-700" />
+               </div>
+               <p className="text-xs font-black uppercase tracking-widest text-gray-600 italic">No Active Transit Clearances</p>
+               <p className="text-[10px] text-gray-800 font-bold uppercase mt-2">Submit a request to move</p>
             </div>
           )}
         </div>
@@ -265,15 +289,15 @@ const StudentFlow: React.FC = () => {
       {view === 'FORM' && (
         <div className="animate-in slide-in-from-bottom-8 duration-500">
           <div className="mb-8 flex items-center justify-between">
-            <button onClick={() => setView('DASHBOARD')} className="text-xs font-bold text-gray-500 uppercase tracking-widest">← Back</button>
-            <h2 className="text-xl font-black italic uppercase text-cyan-400">Request {activeTab} Pass</h2>
+            <button onClick={() => setView('DASHBOARD')} className="text-xs font-bold text-gray-500 uppercase tracking-widest hover:text-white transition-colors">← Back</button>
+            <h2 className="text-xl font-black italic uppercase text-cyan-400 tracking-tighter">New Request</h2>
           </div>
 
           <form onSubmit={handleFormSubmit} className="space-y-6">
             {/* Identity Capture Section */}
-            <div className="glass rounded-[2rem] p-6 border-white/10 space-y-4 shadow-xl">
-              <h2 className="text-xs font-black flex items-center gap-2 mb-4 text-gray-500 tracking-widest uppercase">
-                <Camera className="w-4 h-4" /> Profile Capture
+            <div className="glass rounded-[2.5rem] p-8 border-white/10 space-y-4 shadow-xl">
+              <h2 className="text-[10px] font-black flex items-center gap-2 mb-4 text-gray-500 tracking-[0.3em] uppercase">
+                <Camera className="w-4 h-4" /> Live Verification
               </h2>
               
               <div className="relative aspect-square w-full max-w-[200px] mx-auto rounded-3xl overflow-hidden glass border-2 border-white/5 flex items-center justify-center bg-gray-950 shadow-inner">
@@ -291,11 +315,11 @@ const StudentFlow: React.FC = () => {
 
               <div className="flex justify-center">
                 {!isCameraActive ? (
-                  <button type="button" onClick={startCamera} className="flex items-center gap-2 px-6 py-3 rounded-full bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-widest">
-                    {formData.photo ? 'Retake Identity' : 'Capture Now'}
+                  <button type="button" onClick={startCamera} className="flex items-center gap-2 px-6 py-3 rounded-full bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">
+                    {formData.photo ? 'Retake Identity' : 'Open Lens'}
                   </button>
                 ) : (
-                  <button type="button" onClick={capturePhoto} className="flex items-center gap-2 px-8 py-3 rounded-full bg-cyan-500 text-gray-950 text-xs font-black uppercase">
+                  <button type="button" onClick={capturePhoto} className="flex items-center gap-2 px-8 py-3 rounded-full bg-cyan-500 text-gray-950 text-xs font-black uppercase shadow-lg shadow-cyan-500/20">
                     <Zap className="w-4 h-4 fill-current" /> Snap Profile
                   </button>
                 )}
@@ -304,20 +328,20 @@ const StudentFlow: React.FC = () => {
             </div>
 
             {/* Student Info */}
-            <div className="glass rounded-[2.5rem] p-6 border-white/10 space-y-4 shadow-xl">
-              <h2 className="text-xs font-black flex items-center gap-2 text-gray-500 tracking-widest uppercase mb-2">
-                <UserIcon className="w-4 h-4" /> Verification Details
+            <div className="glass rounded-[2.5rem] p-8 border-white/10 space-y-4 shadow-xl">
+              <h2 className="text-[10px] font-black flex items-center gap-2 text-gray-500 tracking-[0.3em] uppercase mb-2">
+                <UserIcon className="w-4 h-4" /> Identity Details
               </h2>
               <div className="space-y-4">
-                <input required placeholder="Student Full Name" className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 outline-none focus:ring-1 focus:ring-cyan-500 text-sm" 
+                <input required placeholder="Student Full Name" className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 outline-none focus:ring-1 focus:ring-cyan-500 text-sm font-medium" 
                   value={formData.studentName} onChange={e => setFormData({...formData, studentName: e.target.value})} />
                 <div className="grid grid-cols-2 gap-4">
-                  <input required placeholder="USN" className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 outline-none focus:ring-1 focus:ring-cyan-500 text-sm" 
+                  <input required placeholder="USN" className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 outline-none focus:ring-1 focus:ring-cyan-500 text-sm font-medium" 
                     value={formData.usn} onChange={e => setFormData({...formData, usn: e.target.value})} />
-                  <input required placeholder="Room No" className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 outline-none focus:ring-1 focus:ring-cyan-500 text-sm" 
+                  <input required placeholder="Room No" className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 outline-none focus:ring-1 focus:ring-cyan-500 text-sm font-medium" 
                     value={formData.roomNo} onChange={e => setFormData({...formData, roomNo: e.target.value})} />
                 </div>
-                <select className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 outline-none focus:ring-1 focus:ring-cyan-500 text-sm text-gray-400"
+                <select className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 outline-none focus:ring-1 focus:ring-cyan-500 text-sm text-gray-400 font-medium"
                   value={formData.hostel} onChange={e => setFormData({...formData, hostel: e.target.value})}>
                   {HOSTELS.map(h => <option key={h} value={h} className="bg-gray-900">{h}</option>)}
                 </select>
@@ -325,58 +349,45 @@ const StudentFlow: React.FC = () => {
             </div>
 
             {/* Pass Logic */}
-            <div className="glass rounded-[2.5rem] p-6 border-white/10 space-y-4 shadow-xl">
-               <h2 className="text-xs font-black flex items-center gap-2 text-gray-500 tracking-widest uppercase mb-2">
-                <Calendar className="w-4 h-4" /> Purpose & Time
+            <div className="glass rounded-[2.5rem] p-8 border-white/10 space-y-4 shadow-xl">
+               <h2 className="text-[10px] font-black flex items-center gap-2 text-gray-500 tracking-[0.3em] uppercase mb-2">
+                <Calendar className="w-4 h-4" /> Purpose & Schedule
               </h2>
-              <textarea required placeholder="Brief reason for leaving..." rows={2} className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 outline-none focus:ring-1 focus:ring-cyan-500 text-sm" 
+              <textarea required placeholder="Brief reason for leaving..." rows={2} className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 outline-none focus:ring-1 focus:ring-cyan-500 text-sm font-medium italic" 
                   value={formData.reason} onChange={e => setFormData({...formData, reason: e.target.value})} />
               <div className="grid grid-cols-1 gap-4">
                 <div>
-                  <label className="text-[10px] font-black text-gray-500 uppercase block mb-2">Out Time</label>
+                  <label className="text-[10px] font-black text-gray-500 uppercase block mb-2 tracking-widest">Out Time</label>
                   <input required type="datetime-local" className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 text-gray-400 text-sm" 
                     value={formData.outDateTime} onChange={e => setFormData({...formData, outDateTime: e.target.value})} />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black text-gray-500 uppercase block mb-2">Estimated In Time</label>
+                  <label className="text-[10px] font-black text-gray-500 uppercase block mb-2 tracking-widest">Est. In Time</label>
                   <input required type="datetime-local" className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 text-gray-400 text-sm" 
                     value={formData.inDateTime} onChange={e => setFormData({...formData, inDateTime: e.target.value})} />
                 </div>
               </div>
             </div>
 
-            <button type="submit" disabled={isSubmitting || isCameraActive} className="w-full bg-cyan-500 text-gray-950 font-black py-6 rounded-[2rem] flex items-center justify-center gap-3 hover:bg-cyan-400 transition-all shadow-2xl disabled:opacity-50 active:scale-95 uppercase tracking-widest">
+            <button type="submit" disabled={isSubmitting || isCameraActive} className="w-full bg-cyan-500 text-gray-950 font-black py-6 rounded-[2.5rem] flex items-center justify-center gap-3 hover:bg-cyan-400 transition-all shadow-2xl disabled:opacity-50 active:scale-95 uppercase tracking-widest">
               {isSubmitting ? <Loader2 className="animate-spin" /> : <><Send className="w-5 h-5" /> Submit to Warden</>}
             </button>
           </form>
         </div>
       )}
 
-      {view === 'PENDING' && (
-        <div className="flex flex-col items-center justify-center py-24 text-center animate-in zoom-in-95 duration-500">
-          <div className="w-32 h-32 border-4 border-cyan-500/10 border-t-cyan-500 rounded-full animate-spin mb-10 flex items-center justify-center">
-            <Clock className="w-12 h-12 text-cyan-400 animate-pulse" />
-          </div>
-          <h2 className="text-3xl font-black italic tracking-tighter uppercase text-cyan-400 mb-4">Under Review</h2>
-          <p className="text-gray-500 max-w-xs text-sm mb-12">
-            Your {activeTab} Pass request is pending warden digital signature. You will see your QR pass here once approved.
-          </p>
-          <button onClick={() => setView('DASHBOARD')} className="w-full glass py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest">Return to Hub</button>
-        </div>
-      )}
-
       {view === 'SUCCESS' && activePass && (
         <div className="animate-in fade-in zoom-in-95 duration-500">
-          <button onClick={() => setView('DASHBOARD')} className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-8">← Back to Hub</button>
+          <button onClick={() => setView('DASHBOARD')} className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-8 hover:text-white transition-colors">← Hub Dashboard</button>
           
-          <div className="glass rounded-[3rem] p-8 border-white/10 relative overflow-hidden flex flex-col items-center shadow-2xl">
+          <div className="glass rounded-[3rem] p-8 border-white/10 relative overflow-hidden flex flex-col items-center shadow-2xl bg-gradient-to-b from-white/[0.05] to-transparent">
             {/* Holographic Seal */}
             <div className="absolute top-8 right-8 bg-green-500/20 border border-green-500/50 px-4 py-1 rounded-full flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-green-500" />
               <span className="text-[10px] font-black text-green-500 uppercase tracking-widest">VERIFIED</span>
             </div>
 
-            <div className="p-4 bg-white rounded-[2.5rem] mb-8 shadow-[0_0_50px_rgba(255,255,255,0.1)] relative z-10">
+            <div className="p-5 bg-white rounded-[2.5rem] mb-8 shadow-[0_0_50px_rgba(255,255,255,0.1)] relative z-10">
               <QRCodeCanvas 
                 id="gate-pass-qr-full" 
                 value={JSON.stringify({
@@ -395,10 +406,15 @@ const StudentFlow: React.FC = () => {
             
             <div className="w-full space-y-6 relative z-10">
                <div className="flex items-center gap-4 mb-4">
-                  <img src={activePass.photo} className="w-16 h-16 rounded-2xl object-cover border border-white/10 shadow-lg" alt="Profile" />
+                  <div className="relative">
+                    <img src={activePass.photo} className="w-20 h-20 rounded-2xl object-cover border border-white/10 shadow-lg" alt="Profile" />
+                    <div className="absolute -bottom-1 -right-1 bg-cyan-500 p-1 rounded-lg">
+                       <ShieldCheck className="w-4 h-4 text-gray-950" />
+                    </div>
+                  </div>
                   <div>
-                    <h2 className="text-2xl font-black text-white uppercase italic">{activePass.studentName}</h2>
-                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1">
+                    <h2 className="text-2xl font-black text-white uppercase italic leading-tight">{activePass.studentName}</h2>
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1 mt-1">
                        <Hash className="w-3 h-3 text-cyan-400" /> {activePass.usn} • {activePass.passType} PASS
                     </p>
                   </div>
@@ -417,18 +433,18 @@ const StudentFlow: React.FC = () => {
 
                <div className="bg-white/5 p-5 rounded-[2rem] border border-white/5">
                  <div className="flex justify-between items-center mb-4">
-                    <div className="text-[9px] font-black text-gray-500 uppercase">Movement Schedule</div>
+                    <div className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Movement Window</div>
                     <Clock className="w-4 h-4 text-cyan-500" />
                  </div>
                  <div className="flex items-center justify-between">
                     <div>
-                       <span className="text-[8px] text-gray-600 block uppercase">Out</span>
-                       <span className="text-xs font-bold">{formatDateTime(activePass.outTime)}</span>
+                       <span className="text-[8px] text-gray-600 block uppercase tracking-widest">Check-Out</span>
+                       <span className="text-sm font-black text-white">{formatDateTime(activePass.outTime)}</span>
                     </div>
                     <div className="w-8 h-[1px] bg-white/10"></div>
                     <div className="text-right">
-                       <span className="text-[8px] text-gray-600 block uppercase">In</span>
-                       <span className="text-xs font-bold text-orange-400">{formatDateTime(activePass.expectedInTime)}</span>
+                       <span className="text-[8px] text-gray-600 block uppercase tracking-widest">Curfew-In</span>
+                       <span className="text-sm font-black text-orange-400">{formatDateTime(activePass.expectedInTime)}</span>
                     </div>
                  </div>
                </div>
@@ -445,20 +461,6 @@ const StudentFlow: React.FC = () => {
               <span className="text-[10px] font-black uppercase">Share</span>
             </button>
           </div>
-        </div>
-      )}
-
-      {view === 'REJECTED' && (
-        <div className="flex flex-col items-center justify-center py-24 text-center animate-in zoom-in-95 duration-500">
-          <div className="w-24 h-24 bg-red-500/20 rounded-full flex items-center justify-center mb-6 border border-red-500/30">
-            <XCircle className="w-12 h-12 text-red-500" />
-          </div>
-          <h2 className="text-3xl font-black uppercase italic text-red-500 mb-4">Access Denied</h2>
-          <div className="glass w-full p-8 rounded-[3rem] border-red-500/20 mb-8">
-            <p className="text-[10px] font-black text-gray-500 uppercase mb-4">Warden's Remark</p>
-            <p className="italic text-gray-300 text-sm">"{activePass?.rejectionReason || 'Reason not specified'}"</p>
-          </div>
-          <button onClick={() => setView('FORM')} className="w-full bg-white text-gray-950 font-black py-5 rounded-[2rem]">Re-apply Correctly</button>
         </div>
       )}
     </div>
